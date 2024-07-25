@@ -91,7 +91,7 @@ type WebHook struct {
 type Config struct {
 	ClientToken string     `yaml:"client_token" validate:"required"`
 	HostServer  string     `yaml:"host_server" validate:"required"`
-	Debug  		bool       `yaml:"debug" validate:"required"`
+	Debug       bool       `yaml:"debug" validate:"required"`
 	WebHooks    []*WebHook `yaml:"web_hooks"`
 }
 
@@ -100,7 +100,7 @@ func (p *MultiNotifierPlugin) DefaultConfig() interface{} {
 	c := &Config{
 		ClientToken: "CrMo3UaAQG1H37G",
 		HostServer:  "ws://localhost",
-		Debug:		  false
+		Debug:       false,
 	}
 	return c
 }
@@ -135,61 +135,61 @@ func (p *MultiNotifierPlugin) GetDisplay(location *url.URL) string {
 }
 
 func (p *MultiNotifierPlugin) SendMessage(msg plugin.Message, webhook *WebHook) (err error) {
-    var msgTag = ""
-    var matchTag = false
-    if val, ok := msg.Extras["tag"]; ok {
-        msgTag = val.(string)
-    }
+	var msgTag = ""
+	var matchTag = false
+	if val, ok := msg.Extras["tag"]; ok {
+		msgTag = val.(string)
+	}
 	if p.config.Debug {
 		log.Printf("msgTag : %v", msgTag)
 	}
-    for _, tag := range webhook.Tags {
+	for _, tag := range webhook.Tags {
 		if p.config.Debug {
 			log.Printf("tag : %v", tag)
 		}
-        if msgTag != "" && msgTag == tag {
-            matchTag = true
-            break
-        }
-    }
-    if !matchTag {
-        log.Printf("tag dont match, skip")
-        return nil
-    }
-    if webhook.Url == "" {
-        return errors.New("webhook url is empty")
-    }
-    if webhook.Method == "" {
-        webhook.Method = "POST"
-    }
-    if webhook.Header == nil {
-        webhook.Header = map[string]string{
-            "Content-Type": "application/json",
-        }
-    }
-    if webhook.Body == "" {
-        webhook.Body = "{\"msg\":\"$title\n$message\"}"
-    }
-    body := webhook.Body
-    body = strings.Replace(body, "$title", msg.Title, -1)
-    body = strings.Replace(body, "$message", msg.Message, -1)
-    log.Printf("webhook body : %s", body)
-    payload := strings.NewReader(body)
-    req, err := http.NewRequest(webhook.Method, webhook.Url, payload)
-    if err != nil {
-        log.Printf("NewRequest error : %v ", err)
-        return err
-    }
-    for k, v := range webhook.Header {
-        req.Header.Add(k, v)
-    }
-    res, err := http.DefaultClient.Do(req)
-    if err != nil {
-        log.Printf("Do request error : %v ", err)
-        return err
-    }
-    defer res.Body.Close()
-    log.Printf("webhook response : %v ", res)
+		if msgTag != "" && msgTag == tag {
+			matchTag = true
+			break
+		}
+	}
+	if !matchTag {
+		log.Printf("tag dont match, skip")
+		return nil
+	}
+	if webhook.Url == "" {
+		return errors.New("webhook url is empty")
+	}
+	if webhook.Method == "" {
+		webhook.Method = "POST"
+	}
+	if webhook.Header == nil {
+		webhook.Header = map[string]string{
+			"Content-Type": "application/json",
+		}
+	}
+	if webhook.Body == "" {
+		webhook.Body = "{\"msg\":\"$title\n$message\"}"
+	}
+	body := webhook.Body
+	body = strings.Replace(body, "$title", msg.Title, -1)
+	body = strings.Replace(body, "$message", msg.Message, -1)
+	log.Printf("webhook body : %s", body)
+	payload := strings.NewReader(body)
+	req, err := http.NewRequest(webhook.Method, webhook.Url, payload)
+	if err != nil {
+		log.Printf("NewRequest error : %v ", err)
+		return err
+	}
+	for k, v := range webhook.Header {
+		req.Header.Add(k, v)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Printf("Do request error : %v ", err)
+		return err
+	}
+	defer res.Body.Close()
+	log.Printf("webhook response : %v ", res)
 	return
 }
 
@@ -229,10 +229,10 @@ func (p *MultiNotifierPlugin) receiveMessages(serverUrl string) (err error) {
 					continue
 				}
 				for _, webhook := range p.config.WebHooks {
-                    err = p.SendMessage(msg, webhook)
-                    if err != nil {
-                        log.Printf("SendMessage error : %v ", err)
-                    }
+					err = p.SendMessage(msg, webhook)
+					if err != nil {
+						log.Printf("SendMessage error : %v ", err)
+					}
 				}
 			} else {
 				log.Println("unsupported message format")
