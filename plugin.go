@@ -100,7 +100,7 @@ func (p *MultiNotifierPlugin) DefaultConfig() interface{} {
 	c := &Config{
 		ClientToken: "CrMo3UaAQG1H37G",
 		HostServer:  "ws://localhost",
-		Debug: false
+		Debug:		  false
 	}
 	return c
 }
