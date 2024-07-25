@@ -186,6 +186,9 @@ func (p *MultiNotifierPlugin) SendMessage(msg plugin.Message, webhook *WebHook) 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		log.Printf("Do request error : %v ", err)
+		if p.config.Debug {
+			log.Printf("webhook response : %v ", res)
+		}
 		return err
 	}
 	defer res.Body.Close()
@@ -221,12 +224,12 @@ func (p *MultiNotifierPlugin) receiveMessages(serverUrl string) (err error) {
 				return
 			}
 			if message[0] == '{' {
-				if p.config.Debug {
-					log.Println("Websocket read message :", message)
-				}
 				if err := json.Unmarshal(message, &msg); err != nil {
 					log.Println("Json Unmarshal error :", err)
 					continue
+				}
+				if p.config.Debug {
+					log.Printf("Websocket read message : %v", message)
 				}
 				for _, webhook := range p.config.WebHooks {
 					err = p.SendMessage(msg, webhook)
