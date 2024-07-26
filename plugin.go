@@ -229,7 +229,7 @@ func (p *MultiNotifierPlugin) receiveMessages(serverUrl string) (err error) {
 					continue
 				}
 				if p.config.Debug {
-					log.Printf("Websocket read message : %v", message)
+					log.Printf("Websocket read message : %v", msg)
 				}
 				for _, webhook := range p.config.WebHooks {
 					err = p.SendMessage(msg, webhook)
