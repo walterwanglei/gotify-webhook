@@ -137,19 +137,23 @@ func (p *MultiNotifierPlugin) GetDisplay(location *url.URL) string {
 func (p *MultiNotifierPlugin) SendMessage(msg plugin.Message, webhook *WebHook) (err error) {
 	var msgTag = ""
 	var matchTag = false
-	if val, ok := msg.Extras["tag"]; ok {
-		msgTag = val.(string)
-	}
-	if p.config.Debug {
-		log.Printf("msgTag : %v", msgTag)
-	}
-	for _, tag := range webhook.Tags {
-		if p.config.Debug {
-			log.Printf("tag : %v", tag)
+	if msg.Extras == nil {
+		log.Printf("msg.Extras is null")
+	} else {
+		if val, ok := msg.Extras["tag"]; ok {
+			msgTag = val.(string)
 		}
-		if msgTag != "" && msgTag == tag {
-			matchTag = true
-			break
+		if p.config.Debug {
+			log.Printf("msgTag : %v", msgTag)
+		}
+		for _, tag := range webhook.Tags {
+			if p.config.Debug {
+				log.Printf("tag : %v", tag)
+			}
+			if msgTag != "" && msgTag == tag {
+				matchTag = true
+				break
+			}
 		}
 	}
 	if !matchTag {
@@ -229,7 +233,10 @@ func (p *MultiNotifierPlugin) receiveMessages(serverUrl string) (err error) {
 					continue
 				}
 				if p.config.Debug {
-					log.Printf("Websocket read message : %v", msg)
+					log.Printf("Websocket read message1 : %v", msg)
+				}
+				if p.config.Debug {
+					log.Printf("Websocket read message2 : %s", message)
 				}
 				for _, webhook := range p.config.WebHooks {
 					err = p.SendMessage(msg, webhook)
