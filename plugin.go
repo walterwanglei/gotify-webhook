@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
@@ -79,12 +81,24 @@ type Storage struct {
 	CalledTimes int `json:"called_times"`
 }
 
+type MessageExtras struct {
+	Id    int
+	Appid int
+}
+
+type Rule struct {
+	Type  string   `yaml:"type"`
+	Mode  string   `yaml:"mode"`
+	Texts []string `yaml:"texts"`
+}
+
 type WebHook struct {
 	Url    string            `yaml:"url"`
 	Method string            `yaml:"method"`
 	Body   string            `yaml:"body"`
 	Header map[string]string `yaml:"header"`
 	Tags   []string          `yaml:"tags"`
+	Rules  []*Rule           `yaml:"rules"`
 }
 
 // Config defines the plugin config scheme
@@ -134,30 +148,110 @@ func (p *MultiNotifierPlugin) GetDisplay(location *url.URL) string {
 	return message
 }
 
-func (p *MultiNotifierPlugin) SendMessage(msg plugin.Message, webhook *WebHook) (err error) {
-	var msgTag = ""
+func (p *MultiNotifierPlugin) CheckMessage(msg plugin.Message, webhook *WebHook, extras MessageExtras) (bool, error) {
 	var matchTag = false
-	if msg.Extras == nil {
-		log.Printf("msg.Extras is null")
-	} else {
-		if val, ok := msg.Extras["tag"]; ok {
-			msgTag = val.(string)
-		}
-		if p.config.Debug {
-			log.Printf("msgTag : %v", msgTag)
-		}
-		for _, tag := range webhook.Tags {
+	if len(webhook.Rules) == 0 {
+		var msgTag = ""
+		if msg.Extras == nil {
 			if p.config.Debug {
-				log.Printf("tag : %v", tag)
+				log.Printf("msg.Extras is null")
 			}
-			if msgTag != "" && msgTag == tag {
-				matchTag = true
+		} else {
+			if val, ok := msg.Extras["tag"]; ok {
+				msgTag = val.(string)
+			}
+			if p.config.Debug {
+				log.Printf("msgTag : %v", msgTag)
+			}
+			for _, tag := range webhook.Tags {
+				if p.config.Debug {
+					log.Printf("tag : %v", tag)
+				}
+				if msgTag != "" && msgTag == tag {
+					matchTag = true
+					break
+				}
+			}
+		}
+	} else {
+		matchTag = true
+		for _, rule := range webhook.Rules {
+			if rule.Type == "" {
+				rule.Type = "appid"
+			}
+			if rule.Mode == "" {
+				rule.Mode = "&&"
+			}
+			if len(rule.Texts) == 0 {
+				if p.config.Debug {
+					log.Printf("len(rule.Texts) == 0")
+				}
+				matchTag = false
 				break
+			} else {
+				var str = ""
+				var compare = "eq"
+				if p.config.Debug {
+					log.Printf("rule.Type : %v", rule.Type)
+					log.Printf("rule.Mode : %v", rule.Mode)
+					log.Printf("rule.Texts : %v", rule.Texts)
+				}
+				if rule.Type == "appid" {
+					if p.config.Debug {
+						log.Printf("extras.Appid : %v", extras.Appid)
+					}
+					str = fmt.Sprintf("%d", extras.Appid)
+				} else if rule.Type == "title" {
+					str = msg.Title
+					compare = "in"
+				} else if rule.Type == "message" {
+					str = msg.Message
+					compare = "in"
+				} else if rule.Type == "tag" {
+					if msg.Extras != nil {
+						if val, ok := msg.Extras["tag"]; ok {
+							str = val.(string)
+						}
+					}
+				}
+				if p.config.Debug {
+					log.Printf("compare : %v", compare)
+					log.Printf("str : %v", str)
+				}
+				if rule.Mode != "&&" {
+					matchTag = false
+				}
+				for _, text := range rule.Texts {
+					var flag = false
+					switch compare {
+					case "eq":
+						flag = strings.EqualFold(str, text)
+					case "in":
+						flag = strings.Contains(str, text)
+					}
+					if rule.Mode == "&&" {
+						matchTag = matchTag && flag
+						if !matchTag {
+							break
+						}
+					} else {
+						matchTag = matchTag || flag
+					}
+				}
 			}
 		}
 	}
-	if !matchTag {
-		log.Printf("tag dont match, skip")
+	return matchTag, nil
+}
+
+func (p *MultiNotifierPlugin) SendMessage(msg plugin.Message, webhook *WebHook, extras MessageExtras) (err error) {
+	matchFlag, err := p.CheckMessage(msg, webhook, extras)
+	if err != nil {
+		log.Printf("CheckMessage error : %v ", err)
+		return err
+	}
+	if !matchFlag {
+		log.Printf("msg dont match, skip")
 		return nil
 	}
 	if webhook.Url == "" {
@@ -171,13 +265,20 @@ func (p *MultiNotifierPlugin) SendMessage(msg plugin.Message, webhook *WebHook) 
 			"Content-Type": "application/json",
 		}
 	}
+	if p.config.Debug {
+		log.Printf("webhook Header : %v", webhook.Header)
+	}
 	if webhook.Body == "" {
 		webhook.Body = "{\"msg\":\"$title\n$message\"}"
 	}
 	body := webhook.Body
 	body = strings.Replace(body, "$title", msg.Title, -1)
 	body = strings.Replace(body, "$message", msg.Message, -1)
-	log.Printf("webhook body : %s", body)
+	body = strings.Replace(body, "\r", "\\r", -1)
+	body = strings.Replace(body, "\n", "\\n", -1)
+	if p.config.Debug {
+		log.Printf("webhook body : %s", body)
+	}
 	payload := strings.NewReader(body)
 	req, err := http.NewRequest(webhook.Method, webhook.Url, payload)
 	if err != nil {
@@ -186,17 +287,25 @@ func (p *MultiNotifierPlugin) SendMessage(msg plugin.Message, webhook *WebHook) 
 	}
 	for k, v := range webhook.Header {
 		req.Header.Add(k, v)
+		if p.config.Debug {
+			log.Printf("Add Header : %v = %v", k, v)
+		}
 	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		log.Printf("Do request error : %v ", err)
-		if p.config.Debug {
-			log.Printf("webhook response : %v ", res)
-		}
 		return err
 	}
 	defer res.Body.Close()
-	log.Printf("webhook response : %v ", res)
+
+	resBody, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		log.Printf("Read response error : %v ", err)
+		return err
+	}
+	if p.config.Debug {
+		log.Printf("webhook response : %v ", string(resBody))
+	}
 	return
 }
 
@@ -219,7 +328,6 @@ func (p *MultiNotifierPlugin) receiveMessages(serverUrl string) (err error) {
 	}
 	log.Printf("Connected to %s", serverUrl)
 	defer conn.Close()
-	msg := plugin.Message{}
 	go func() {
 		for {
 			_, message, err := conn.ReadMessage()
@@ -227,19 +335,21 @@ func (p *MultiNotifierPlugin) receiveMessages(serverUrl string) (err error) {
 				log.Println("Websocket read message error :", err)
 				return
 			}
+			if p.config.Debug {
+				log.Printf("Websocket read message : %s", message)
+			}
 			if message[0] == '{' {
+				msg := plugin.Message{}
 				if err := json.Unmarshal(message, &msg); err != nil {
 					log.Println("Json Unmarshal error :", err)
 					continue
 				}
-				if p.config.Debug {
-					log.Printf("Websocket read message1 : %v", msg)
-				}
-				if p.config.Debug {
-					log.Printf("Websocket read message2 : %s", message)
+				msgExtras := MessageExtras{}
+				if err := json.Unmarshal(message, &msgExtras); err != nil {
+					log.Println("Json Unmarshal error :", err)
 				}
 				for _, webhook := range p.config.WebHooks {
-					err = p.SendMessage(msg, webhook)
+					err = p.SendMessage(msg, webhook, msgExtras)
 					if err != nil {
 						log.Printf("SendMessage error : %v ", err)
 					}
@@ -283,6 +393,6 @@ func NewGotifyPluginInstance(ctx plugin.UserContext) plugin.Plugin {
 	return &MultiNotifierPlugin{}
 }
 
-func main() {
-	panic("this should be built as go plugin")
-}
+//func main() {
+//	panic("this should be built as go plugin")
+//}
