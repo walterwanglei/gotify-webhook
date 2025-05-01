@@ -19,7 +19,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.18'
+        go-version: '1.23'
 
     - name: Download gomod-cap tool
       run: go install github.com/gotify/plugin-api/cmd/gomod-cap@latest
